@@ -287,6 +287,40 @@ export default function App() {
     window.scrollTo(0, 0);
   }, [activeTab]);
 
+  // Handle initial route on load and browser back/forward navigation
+  useEffect(() => {
+    const handleLocationChange = () => {
+      const path = window.location.pathname;
+      if (path === "/admin" || path.endsWith("/admin")) {
+        setActiveTab("dashboard");
+      } else {
+        setActiveTab((prev) => (prev === "dashboard" ? "inicio" : prev));
+      }
+    };
+
+    // Run on initial mount
+    handleLocationChange();
+
+    window.addEventListener("popstate", handleLocationChange);
+    return () => {
+      window.removeEventListener("popstate", handleLocationChange);
+    };
+  }, []);
+
+  // Synchronize activeTab state with the browser URL slug
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (activeTab === "dashboard") {
+      if (path !== "/admin" && !path.endsWith("/admin")) {
+        window.history.pushState(null, "", "/admin");
+      }
+    } else {
+      if (path === "/admin" || path.endsWith("/admin")) {
+        window.history.pushState(null, "", "/");
+      }
+    }
+  }, [activeTab]);
+
   // Handle open hours calculation
   useEffect(() => {
     const checkOpenStatus = () => {
