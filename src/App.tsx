@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.5
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Scissors, 
@@ -29,31 +29,195 @@ import {
   Eye, 
   EyeOff,
   Briefcase,
-  AlertCircle
+  AlertCircle,
+  Leaf,
+  Shield
 } from "lucide-react";
 
 import { Service, Barber, Client, Booking } from "./types";
 import { SERVICES, BARBERS, GALLERY_ITEMS, TESTIMONIALS } from "./data";
+import BarberDashboard from "./components/BarberDashboard";
+import { 
+  seedFirestoreIfEmpty, 
+  listenToBookings, 
+  listenToClients,
+  listenToServices,
+  saveBookingToFirestore,
+  saveClientToFirestore,
+  saveServiceToFirestore
+} from "./lib/firebase";
+
+// Dynamic Date Generator for realistic pre-seeded scheduling
+const getRelativeDate = (offset: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  return d.toISOString().split("T")[0];
+};
+
+const SEEDED_CLIENTS: Client[] = [
+  {
+    id: "cli-carlos",
+    nome: "Carlos Eduardo",
+    telefone: "(41) 99888-1234",
+    email: "carlos@gmail.com",
+    quantidade_visitas: 4,
+    ultima_visita: getRelativeDate(-1),
+    criado_em: new Date().toISOString()
+  },
+  {
+    id: "cli-felipe",
+    nome: "Felipe Mendes",
+    telefone: "(41) 98777-4321",
+    email: "felipe@gmail.com",
+    quantidade_visitas: 2,
+    ultima_visita: getRelativeDate(-1),
+    criado_em: new Date().toISOString()
+  },
+  {
+    id: "cli-bruno",
+    nome: "Bruno Silva",
+    telefone: "(41) 99122-3344",
+    email: "bruno@gmail.com",
+    quantidade_visitas: 7,
+    ultima_visita: getRelativeDate(0),
+    criado_em: new Date().toISOString()
+  },
+  {
+    id: "cli-gustavo",
+    nome: "Gustavo Rocha",
+    telefone: "(41) 98833-4455",
+    email: "gustavo@gmail.com",
+    quantidade_visitas: 1,
+    ultima_visita: getRelativeDate(0),
+    criado_em: new Date().toISOString()
+  },
+  {
+    id: "cli-thiago",
+    nome: "Thiago Santos",
+    telefone: "(41) 99200-5566",
+    email: "thiago@gmail.com",
+    quantidade_visitas: 5,
+    ultima_visita: getRelativeDate(0),
+    criado_em: new Date().toISOString()
+  }
+];
+
+const SEEDED_BOOKINGS: Booking[] = [
+  {
+    id: "appt-1",
+    id_cliente: "cli-carlos",
+    id_servico: "svc-corte-tradicional",
+    id_barbeiro: "barber-rodrigo",
+    data: getRelativeDate(-1),
+    horario: "14:00",
+    status: "concluido",
+    criado_em: new Date().toISOString()
+  },
+  {
+    id: "appt-2",
+    id_cliente: "cli-felipe",
+    id_servico: "svc-barboterapia",
+    id_barbeiro: "barber-luan",
+    data: getRelativeDate(-1),
+    horario: "16:30",
+    status: "concluido",
+    criado_em: new Date().toISOString()
+  },
+  {
+    id: "appt-3",
+    id_cliente: "cli-bruno",
+    id_servico: "svc-combo-corte-barba",
+    id_barbeiro: "barber-fernando",
+    data: getRelativeDate(0),
+    horario: "10:00",
+    status: "agendado",
+    criado_em: new Date().toISOString()
+  },
+  {
+    id: "appt-4",
+    id_cliente: "cli-gustavo",
+    id_servico: "svc-corte-tradicional",
+    id_barbeiro: "barber-rodrigo",
+    data: getRelativeDate(0),
+    horario: "11:30",
+    status: "concluido",
+    criado_em: new Date().toISOString()
+  },
+  {
+    id: "appt-5",
+    id_cliente: "cli-thiago",
+    id_servico: "svc-platinado-nevou",
+    id_barbeiro: "barber-emerson",
+    data: getRelativeDate(0),
+    horario: "15:00",
+    status: "agendado",
+    criado_em: new Date().toISOString()
+  },
+  {
+    id: "appt-6",
+    id_cliente: "cli-carlos",
+    id_servico: "svc-acabamento",
+    id_barbeiro: "barber-luan",
+    data: getRelativeDate(0),
+    horario: "17:00",
+    status: "nao_compareceu",
+    criado_em: new Date().toISOString()
+  },
+  {
+    id: "appt-7",
+    id_cliente: "cli-bruno",
+    id_servico: "svc-corte-tradicional",
+    id_barbeiro: "barber-fernando",
+    data: getRelativeDate(1),
+    horario: "09:30",
+    status: "agendado",
+    criado_em: new Date().toISOString()
+  },
+  {
+    id: "appt-8",
+    id_cliente: "cli-felipe",
+    id_servico: "svc-combo-corte-barba",
+    id_barbeiro: "barber-rodrigo",
+    data: getRelativeDate(1),
+    horario: "14:00",
+    status: "agendado",
+    criado_em: new Date().toISOString()
+  }
+];
 
 export default function App() {
-  // Navigation tabs: 'inicio' | 'agendar' | 'meus-agendamentos' | 'localizacao'
+  // Navigation tabs: 'inicio' | 'agendar' | 'meus-agendamentos' | 'localizacao' | 'dashboard'
   const [activeTab, setActiveTab] = useState<string>("inicio");
   
   // Local Database States
   const [clients, setClients] = useState<Client[]>(() => {
     const saved = localStorage.getItem("dom_lucas_clientes");
-    return saved ? JSON.parse(saved) : [];
+    return saved ? JSON.parse(saved) : SEEDED_CLIENTS;
   });
   
   const [bookings, setBookings] = useState<Booking[]>(() => {
     const saved = localStorage.getItem("dom_lucas_agendamentos");
-    return saved ? JSON.parse(saved) : [];
+    return saved ? JSON.parse(saved) : SEEDED_BOOKINGS;
+  });
+
+  const [services, setServices] = useState<Service[]>(() => {
+    const saved = localStorage.getItem("dom_lucas_servicos");
+    return saved ? JSON.parse(saved) : SERVICES;
   });
   
   const [currentUser, setCurrentUser] = useState<Client | null>(() => {
     const saved = localStorage.getItem("dom_lucas_session");
     return saved ? JSON.parse(saved) : null;
   });
+
+  // Barber authentication state and login credentials
+  const [isBarberAuthenticated, setIsBarberAuthenticated] = useState<boolean>(() => {
+    return sessionStorage.getItem("dom_lucas_barber_authenticated") === "true";
+  });
+  const [barberUsername, setBarberUsername] = useState("");
+  const [barberPassword, setBarberPassword] = useState("");
+  const [barberLoginError, setBarberLoginError] = useState("");
+  const [showBarberPassword, setShowBarberPassword] = useState(false);
 
   // Business Hours Configuration
   const businessHours = {
@@ -68,6 +232,35 @@ export default function App() {
   // State for header logo loading fallback
   const [logoFailed, setLogoFailed] = useState<boolean>(false);
 
+  // Synchronize state with Firestore in real-time
+  useEffect(() => {
+    // Seed Firestore with SEEDED_CLIENTS, SEEDED_BOOKINGS, and SERVICES if they are empty
+    seedFirestoreIfEmpty(SEEDED_CLIENTS, SEEDED_BOOKINGS, SERVICES);
+
+    // Set up real-time listener for bookings
+    const unsubscribeBookings = listenToBookings((updatedBookings) => {
+      setBookings(updatedBookings);
+    });
+
+    // Set up real-time listener for clients
+    const unsubscribeClients = listenToClients((updatedClients) => {
+      setClients(updatedClients);
+    });
+
+    // Set up real-time listener for services
+    const unsubscribeServices = listenToServices((updatedServices) => {
+      if (updatedServices.length > 0) {
+        setServices(updatedServices);
+      }
+    });
+
+    return () => {
+      unsubscribeBookings();
+      unsubscribeClients();
+      unsubscribeServices();
+    };
+  }, []);
+
   // Sync with LocalStorage
   useEffect(() => {
     localStorage.setItem("dom_lucas_clientes", JSON.stringify(clients));
@@ -78,12 +271,21 @@ export default function App() {
   }, [bookings]);
 
   useEffect(() => {
+    localStorage.setItem("dom_lucas_servicos", JSON.stringify(services));
+  }, [services]);
+
+  useEffect(() => {
     if (currentUser) {
       localStorage.setItem("dom_lucas_session", JSON.stringify(currentUser));
     } else {
       localStorage.removeItem("dom_lucas_session");
     }
   }, [currentUser]);
+
+  // Scroll to top on tab change
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [activeTab]);
 
   // Handle open hours calculation
   useEffect(() => {
@@ -131,6 +333,60 @@ export default function App() {
 
   // Subtab for Appointments dashboard: 'futuros' | 'passados'
   const [appointmentsTab, setAppointmentsTab] = useState<"futuros" | "passados">("futuros");
+
+  // Auto-scrolling Gallery Hook
+  const galleryScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const container = galleryScrollRef.current;
+    if (!container) return;
+
+    let animationId: number;
+    const speed = 0.8; // Butter-smooth continuous scrolling speed
+    let scrollPosition = 0;
+
+    const startScroll = () => {
+      if (!container) return;
+      
+      scrollPosition += speed;
+      container.scrollLeft = Math.floor(scrollPosition);
+      
+      const maxScroll = container.scrollWidth - container.clientWidth;
+      if (container.scrollLeft >= maxScroll - 2) {
+        scrollPosition = 1;
+        container.scrollLeft = 1;
+      }
+      animationId = requestAnimationFrame(startScroll);
+    };
+
+    let isInteracting = false;
+    const onStart = () => {
+      isInteracting = true;
+      cancelAnimationFrame(animationId);
+    };
+    const onEnd = () => {
+      isInteracting = false;
+      // Sync our float variable with the actual integer scroll position
+      scrollPosition = container.scrollLeft;
+      animationId = requestAnimationFrame(startScroll);
+    };
+
+    container.addEventListener("mouseenter", onStart);
+    container.addEventListener("mouseleave", onEnd);
+    container.addEventListener("touchstart", onStart, { passive: true });
+    container.addEventListener("touchend", onEnd, { passive: true });
+
+    animationId = requestAnimationFrame(startScroll);
+
+    return () => {
+      cancelAnimationFrame(animationId);
+      if (container) {
+        container.removeEventListener("mouseenter", onStart);
+        container.removeEventListener("mouseleave", onEnd);
+        container.removeEventListener("touchstart", onStart);
+        container.removeEventListener("touchend", onEnd);
+      }
+    };
+  }, []);
 
   // ==========================================
   // AUTENTICAÇÃO HANDLERS
@@ -199,7 +455,7 @@ export default function App() {
       criado_em: new Date().toISOString()
     };
 
-    setClients((prev) => [...prev, newClient]);
+    saveClientToFirestore(newClient);
     setCurrentUser(newClient);
     setShowAuthModal(false);
 
@@ -293,7 +549,7 @@ export default function App() {
       const [h, m] = b.horario.split(":").map(Number);
       const start = h * 60 + m;
       // Find duration of the booked service (fallback to 30min)
-      const service = SERVICES.find((s) => s.id === b.id_servico);
+      const service = services.find((s) => s.id === b.id_servico);
       const duration = service ? service.duracao_minutos : 30;
       return {
         barberId: b.id_barbeiro,
@@ -380,7 +636,7 @@ export default function App() {
       const occupiedRanges = activeBookings.map((b) => {
         const [bh, bm] = b.horario.split(":").map(Number);
         const start = bh * 60 + bm;
-        const svc = SERVICES.find((s) => s.id === b.id_servico);
+        const svc = services.find((s) => s.id === b.id_servico);
         const duration = svc ? svc.duracao_minutos : 30;
         return { barberId: b.id_barbeiro, start, end: start + duration };
       });
@@ -417,48 +673,29 @@ export default function App() {
       criado_em: new Date().toISOString()
     };
 
-    // Save Booking
-    setBookings((prev) => [...prev, newBooking]);
+    // Save Booking to Firestore
+    saveBookingToFirestore(newBooking);
 
-    // Update client visits
-    setClients((prevClients) =>
-      prevClients.map((c) => {
-        if (c.id === currentUser.id) {
-          return {
-            ...c,
-            quantidade_visitas: c.quantidade_visitas + 1,
-            ultima_visita: new Date().toISOString()
-          };
-        }
-        return c;
-      })
-    );
+    // Save Client update to Firestore
+    const updatedClient: Client = {
+      ...currentUser,
+      quantidade_visitas: currentUser.quantidade_visitas + 1,
+      ultima_visita: new Date().toISOString()
+    };
+    saveClientToFirestore(updatedClient);
 
     // Sync currentUser state locally
-    setCurrentUser((prev) => {
-      if (prev) {
-        return {
-          ...prev,
-          quantidade_visitas: prev.quantidade_visitas + 1,
-          ultima_visita: new Date().toISOString()
-        };
-      }
-      return prev;
-    });
+    setCurrentUser(updatedClient);
 
     setBookingStep(6);
   };
 
   const handleCancelBooking = (apptId: string) => {
     if (confirm("Tem certeza que deseja cancelar este agendamento?")) {
-      setBookings((prev) =>
-        prev.map((b) => {
-          if (b.id === apptId) {
-            return { ...b, status: "cancelado" };
-          }
-          return b;
-        })
-      );
+      const target = bookings.find((b) => b.id === apptId);
+      if (target) {
+        saveBookingToFirestore({ ...target, status: "cancelado" });
+      }
     }
   };
 
@@ -590,169 +827,334 @@ export default function App() {
             TAB: INÍCIO (HOMEPAGE)
             ========================================== */}
         {activeTab === "inicio" && (
-          <div className="space-y-16">
+          <div className="space-y-10">
             
-            {/* Status bar */}
-            <div className="flex items-center justify-center gap-3 py-2 px-4 bg-dark-card border border-zinc-800 rounded-xl w-fit mx-auto shadow-md">
-              <span className={`w-3 h-3 rounded-full ${isOpen ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'} animate-pulse`} />
-              <span className={`font-heading text-xs sm:text-sm font-bold tracking-widest ${isOpen ? 'text-emerald-400' : 'text-red-400'}`}>
-                {isOpen ? 'ABERTO AGORA' : 'FECHADO AGORA'}
-              </span>
-              <span className="text-[11px] text-zinc-500">TERÇA A SÁBADO DAS 09:00 ÀS 20:00</span>
-            </div>
-
             {/* HERO BANNER SECTION */}
             <div 
-              className="relative rounded-2xl overflow-hidden border border-zinc-900 h-[480px] flex items-center justify-center text-center p-6 bg-cover bg-center shadow-[inset_0_0_100px_rgba(0,0,0,0.95)]"
+              className="relative rounded-2xl overflow-hidden border border-zinc-900 min-h-[500px] flex flex-col items-center justify-center text-center p-6 bg-cover bg-center shadow-[inset_0_0_120px_rgba(0,0,0,0.95)]"
               style={{ 
-                backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.5), rgba(18,18,18,0.95)), url('https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=1600&h=1000&fit=crop&q=80')` 
+                backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.5), rgba(18,18,18,0.95)), url('https://images.unsplash.com/photo-1621605815971-fbc98d665033?w=1600&h=1000&fit=crop&q=80')` 
               }}
             >
-              <div className="max-w-2xl z-10 flex flex-col items-center">
-                <span className="text-primary-gold font-heading text-sm sm:text-base tracking-[4px] font-bold mb-3 uppercase">
-                  ESTILO | QUALIDADE | PRECISÃO
-                </span>
-                <h1 className="font-heading text-4xl sm:text-6xl font-extrabold tracking-tight text-white uppercase leading-none mb-6">
-                  SEU CORTE,<br />SUA REGRA
-                </h1>
-                <p className="text-zinc-300 max-w-lg text-sm sm:text-base mb-8 font-light">
-                  Chega de sair da barbearia insatisfeito. Nossos profissionais são mestres em cortes modernos, clássicos e barboterapia.
-                </p>
+              {/* Extra gradient tint for contrast */}
+              <div className="absolute inset-0 bg-black/35 z-0" />
+
+              <div className="max-w-2xl z-10 flex flex-col items-center space-y-6">
+                
+                {/* Status bar inside the hero card so the image goes above it */}
+                <div className="flex items-center justify-center gap-2 py-1.5 px-4 bg-black/70 backdrop-blur-md border border-zinc-800/85 rounded-full w-fit shadow-lg">
+                  <span className={`w-2.5 h-2.5 rounded-full ${isOpen ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'} animate-pulse`} />
+                  <span className={`font-heading text-xs font-bold tracking-widest ${isOpen ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {isOpen ? 'ABERTO AGORA' : 'FECHADO AGORA'}
+                  </span>
+                </div>
+
+                <div className="space-y-3 flex flex-col items-center">
+                  <span className="text-primary-gold font-heading text-[10px] xs:text-xs sm:text-sm tracking-[2px] xs:tracking-[3px] sm:tracking-[4px] font-bold uppercase whitespace-nowrap block">
+                    ESTILO | QUALIDADE | PRECISÃO
+                  </span>
+                  <h1 className="font-heading text-4xl sm:text-6xl font-extrabold tracking-tight text-white uppercase leading-none">
+                    SEU CORTE,<br />SUA REGRA
+                  </h1>
+                  <p className="text-zinc-300 max-w-lg text-sm sm:text-base font-light">
+                    Chega de sair da barbearia insatisfeito.
+                  </p>
+                </div>
 
                 {/* Spacing above the button block, and layout side-by-side as requested */}
-                <div className="mt-8 pt-4 w-full flex flex-col items-center gap-4">
+                <div className="pt-2 w-full flex flex-col items-center gap-4">
                   
                   {/* Slow pulsing phrase: 👇Toque e agende seu hórario */}
                   <motion.p 
-                    animate={{ opacity: [0.3, 1, 0.3], scale: [0.98, 1, 0.98] }}
+                    animate={{ opacity: [0.4, 1, 0.4], scale: [0.98, 1, 0.98] }}
                     transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-                    className="text-primary-gold font-heading text-base sm:text-lg tracking-wider font-semibold uppercase flex items-center gap-1"
+                    className="text-primary-gold font-heading text-sm sm:text-base tracking-wider font-semibold uppercase flex items-center gap-1.5"
                   >
-                    👇 Toque e agende seu hórario
+                    👇 Toque e agende seu horário
                   </motion.p>
                   
                   {/* Side-by-side CTA buttons on desktop and mobile */}
-                  <div className="flex flex-row items-center justify-center gap-3 w-full max-w-sm px-2">
-                    <button 
+                  <div className="flex flex-row items-center justify-center gap-3.5 w-full max-w-md px-1">
+                    <motion.button 
+                      whileHover={{ scale: 1.05, boxShadow: "0 0 25px rgba(212,175,55,0.6)" }}
+                      whileTap={{ scale: 0.95 }}
                       onClick={() => { setActiveTab("agendar"); resetBookingFlow(); }}
-                      className="flex-1 flex items-center justify-center gap-2 bg-primary-gold hover:bg-transparent text-black hover:text-primary-gold border border-primary-gold py-3.5 px-4 rounded font-heading font-bold text-xs sm:text-sm tracking-wide uppercase transition-all duration-300 shadow-[0_4px_20px_rgba(212,175,55,0.25)] hover:shadow-[0_4px_20px_rgba(212,175,55,0.4)]"
+                      className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 via-primary-gold to-amber-500 text-black py-4 px-3 sm:px-5 rounded-xl font-heading font-extrabold text-xs sm:text-sm tracking-wider uppercase cursor-pointer transition-all duration-300 shadow-[0_4px_20px_rgba(212,175,55,0.3)] border-none"
                     >
                       <Scissors className="w-4 h-4 transform rotate-90" />
                       Agendar Horário
-                    </button>
-                    <button 
+                    </motion.button>
+                    
+                    <motion.button 
+                      whileHover={{ scale: 1.05, borderColor: "#ffffff", backgroundColor: "rgba(255,255,255,0.08)" }}
+                      whileTap={{ scale: 0.95 }}
                       onClick={() => setActiveTab("localizacao")}
-                      className="flex-1 flex items-center justify-center gap-2 bg-transparent hover:bg-zinc-800 text-white border border-zinc-700 hover:border-white py-3.5 px-4 rounded font-heading font-bold text-xs sm:text-sm tracking-wide uppercase transition-all duration-300"
+                      className="flex-1 flex items-center justify-center gap-2 bg-zinc-900/80 hover:bg-zinc-800 text-white border-2 border-zinc-700 py-4 px-3 sm:px-5 rounded-xl font-heading font-extrabold text-xs sm:text-sm tracking-wider uppercase cursor-pointer transition-all duration-300"
                     >
-                      <MapPin className="w-4 h-4" />
-                      Como Chegar
-                    </button>
+                      <span>Como Chegar 📍</span>
+                    </motion.button>
+                  </div>
+
+                  {/* Premium Stats Row */}
+                  <div className="w-full max-w-xl mt-6 bg-zinc-950/20 backdrop-blur-xs rounded-xl py-4 px-2 sm:px-6">
+                    <div className="flex items-center justify-between">
+                      
+                      {/* Stat 1 */}
+                      <div className="flex-1 flex flex-col items-center text-center px-1">
+                        <div className="flex items-center gap-1 justify-center">
+                          <span className="font-serif text-2xl sm:text-3xl font-medium text-primary-gold tracking-tight">4.9</span>
+                          <span className="text-primary-gold text-lg sm:text-xl">★</span>
+                        </div>
+                        <span className="text-[8px] sm:text-[10px] tracking-[0.15em] sm:tracking-[0.2em] text-zinc-500 uppercase font-bold mt-1">
+                          AVALIAÇÕES
+                        </span>
+                      </div>
+
+                      {/* Divider */}
+                      <div className="w-[1px] h-10 bg-primary-gold/20 self-center" />
+
+                      {/* Stat 2 */}
+                      <div className="flex-1 flex flex-col items-center text-center px-1">
+                        <span className="font-serif text-2xl sm:text-3xl font-medium text-primary-gold tracking-tight">
+                          +9
+                        </span>
+                        <span className="text-[8px] sm:text-[10px] tracking-[0.15em] sm:tracking-[0.2em] text-zinc-500 uppercase font-bold mt-1">
+                          Anos de Barbearia
+                        </span>
+                      </div>
+
+                      {/* Divider */}
+                      <div className="w-[1px] h-10 bg-primary-gold/20 self-center" />
+
+                      {/* Stat 3 */}
+                      <div className="flex-1 flex flex-col items-center text-center px-1">
+                        <span className="font-serif text-2xl sm:text-3xl font-medium text-primary-gold tracking-tight">
+                          4
+                        </span>
+                        <span className="text-[8px] sm:text-[10px] tracking-[0.15em] sm:tracking-[0.2em] text-zinc-500 uppercase font-bold mt-1">
+                          Profissionais Elite
+                        </span>
+                      </div>
+
+                    </div>
                   </div>
 
                 </div>
               </div>
             </div>
 
-            {/* DIFERENCIAIS SECTION */}
-            <section className="space-y-8">
-              <div className="text-center">
-                <span className="text-primary-gold font-heading text-xs tracking-[3px] uppercase font-bold">POR QUE ESCOLHER A GENTE</span>
-                <h2 className="font-heading text-3xl font-extrabold text-white uppercase mt-1">DIFERENCIAIS CLUBE</h2>
-                <div className="w-12 h-0.5 bg-primary-gold mx-auto mt-3 rounded" />
+            {/* PREMIUM FEATURES BAR - EXACT STYLE FROM IMAGE */}
+            <div className="w-full bg-zinc-950/65 backdrop-blur-md rounded-2xl border border-zinc-900/85 shadow-2xl py-7 px-1 sm:px-6 -mt-10 sm:-mt-14 relative z-20">
+              <div className="grid grid-cols-4 divide-x divide-primary-gold/15">
+                
+                {/* Column 1 */}
+                <div className="flex flex-col items-center justify-center text-center px-1 sm:px-4">
+                  <MapPin className="w-5 h-5 sm:w-6 sm:h-6 text-primary-gold mb-2" />
+                  <h4 className="font-serif text-xs xs:text-sm sm:text-xl md:text-2xl text-primary-gold font-medium tracking-wide">
+                    Mercês
+                  </h4>
+                  <span className="text-[7px] xs:text-[8px] sm:text-[10px] md:text-xs tracking-[0.1em] sm:tracking-[0.2em] text-zinc-500 uppercase font-bold mt-1.5 whitespace-nowrap">
+                    CURITIBA, PR
+                  </span>
+                </div>
+
+                {/* Column 2 */}
+                <div className="flex flex-col items-center justify-center text-center px-1 sm:px-4">
+                  <Scissors className="w-5 h-5 sm:w-6 sm:h-6 text-primary-gold mb-2" />
+                  <h4 className="font-serif text-xs xs:text-sm sm:text-xl md:text-2xl text-primary-gold font-medium tracking-wide">
+                    Barba & Corte
+                  </h4>
+                </div>
+
+                {/* Column 3 */}
+                <div className="flex flex-col items-center justify-center text-center px-1 sm:px-4">
+                  <Leaf className="w-5 h-5 sm:w-6 sm:h-6 text-primary-gold mb-2" />
+                  <h4 className="font-serif text-xs xs:text-sm sm:text-xl md:text-2xl text-primary-gold font-medium tracking-wide">
+                    Massoterapia
+                  </h4>
+                  <span className="text-[7px] xs:text-[8px] sm:text-[10px] md:text-xs tracking-[0.1em] sm:tracking-[0.2em] text-zinc-500 uppercase font-bold mt-1.5 whitespace-nowrap">
+                    RELAXAMENTO
+                  </span>
+                </div>
+
+                {/* Column 4 */}
+                <div className="flex flex-col items-center justify-center text-center px-1 sm:px-4">
+                  <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-primary-gold mb-2" />
+                  <h4 className="font-serif text-xs xs:text-sm sm:text-xl md:text-2xl text-primary-gold font-medium tracking-wide">
+                    Seg–Sáb
+                  </h4>
+                  <span className="text-[7px] xs:text-[8px] sm:text-[10px] md:text-xs tracking-[0.1em] sm:tracking-[0.2em] text-zinc-500 uppercase font-bold mt-1.5 whitespace-nowrap">
+                    HORÁRIOS FLEXÍVEIS
+                  </span>
+                </div>
+
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-dark-card border border-zinc-900 rounded-xl p-8 hover:border-primary-gold/40 hover:-translate-y-1 transition-all duration-300 group shadow-lg">
-                  <div className="w-12 h-12 rounded-lg bg-primary-gold/10 flex items-center justify-center text-primary-gold mb-6 group-hover:bg-primary-gold group-hover:text-black transition-all duration-300">
-                    <Sparkles className="w-6 h-6" />
-                  </div>
-                  <h3 className="font-heading text-xl font-bold text-white uppercase mb-3">Degradê Impecável</h3>
-                  <p className="text-zinc-400 text-sm font-light">
-                    Nossos profissionais dominam todas as técnicas de fade e cortes clássicos e modernos. Seu cabelo sai milimetricamente perfeito.
-                  </p>
-                </div>
-
-                <div className="bg-dark-card border border-zinc-900 rounded-xl p-8 hover:border-primary-gold/40 hover:-translate-y-1 transition-all duration-300 group shadow-lg">
-                  <div className="w-12 h-12 rounded-lg bg-primary-gold/10 flex items-center justify-center text-primary-gold mb-6 group-hover:bg-primary-gold group-hover:text-black transition-all duration-300">
-                    <Coffee className="w-6 h-6" />
-                  </div>
-                  <h3 className="font-heading text-xl font-bold text-white uppercase mb-3">Ambiente Descontraído</h3>
-                  <p className="text-zinc-400 text-sm font-light">
-                    Ar-condicionado, som ambiente de muito bom gosto, café quentinho ou aquela bebida gelada. Espera premium para descontrair.
-                  </p>
-                </div>
-
-                <div className="bg-dark-card border border-zinc-900 rounded-xl p-8 hover:border-primary-gold/40 hover:-translate-y-1 transition-all duration-300 group shadow-lg">
-                  <div className="w-12 h-12 rounded-lg bg-primary-gold/10 flex items-center justify-center text-primary-gold mb-6 group-hover:bg-primary-gold group-hover:text-black transition-all duration-300">
-                    <Clock className="w-6 h-6" />
-                  </div>
-                  <h3 className="font-heading text-xl font-bold text-white uppercase mb-3">Praticidade Total</h3>
-                  <p className="text-zinc-400 text-sm font-light">
-                    Agende online pelo celular em menos de um minuto, chegue no horário e evite filas. Respeito total pelo seu tempo.
-                  </p>
-                </div>
-              </div>
-            </section>
-
-            {/* ABOUT / FACHADA SECTION */}
-            <section className="bg-zinc-950 rounded-2xl border border-zinc-900 p-8 sm:p-12 shadow-md">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
-                <div className="flex justify-center">
-                  <div className="relative border-[6px] border-double border-primary-gold p-1.5 rounded-lg bg-zinc-900 max-w-sm sm:max-w-md shadow-2xl overflow-hidden group">
-                    <img 
-                      src="https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=600&h=600&fit=crop&q=80" 
-                      alt="Fachada Barbearia" 
-                      className="rounded object-cover h-[340px] w-full transform group-hover:scale-105 transition-all duration-500" 
-                    />
-                    <div className="absolute inset-0 bg-black/10 rounded" />
-                  </div>
-                </div>
-                <div className="space-y-6">
-                  <span className="text-primary-gold font-heading text-xs tracking-[3px] uppercase font-bold block">NOSSO ESPAÇO</span>
-                  <h2 className="font-heading text-3xl font-extrabold text-white uppercase">A BARBEARIA DO SEU BAIRRO</h2>
-                  <p className="text-zinc-300 text-sm leading-relaxed font-light">
-                    A <strong>Barbearia Clube</strong> nasceu com o compromisso de trazer um espaço de estilo, lazer e resenha masculina pra comunidade. Nada de frescura — nossa essência é o corte bem feito, preço justo e um lugar onde você pode relaxar e se sentir em casa.
-                  </p>
-                  <p className="text-zinc-300 text-sm leading-relaxed font-light">
-                    Trabalhamos com marcas premium de pomadas, óleos para barba e pós-barba de alta qualidade para garantir que seu visual fique perfeito por muito mais tempo.
-                  </p>
-                  <div className="inline-flex items-center gap-2 border border-dashed border-primary-gold/50 px-4 py-2 rounded text-primary-gold text-xs tracking-wider uppercase font-heading font-semibold">
-                    <Award className="w-4 h-4" />
-                    Referência no Bairro
-                  </div>
-                </div>
-              </div>
-            </section>
+            </div>
 
             {/* GALLERY SECTION */}
-            <section className="space-y-8">
+            <section className="space-y-6">
               <div className="text-center">
                 <span className="text-primary-gold font-heading text-xs tracking-[3px] uppercase font-bold">GALERIA DE ESTILOS</span>
                 <h2 className="font-heading text-3xl font-extrabold text-white uppercase mt-1">Nossos Cortes</h2>
-                <p className="text-zinc-500 text-xs sm:text-sm max-w-md mx-auto mt-2">
-                  Clique em qualquer corte abaixo para ampliar e conferir os detalhes milimétricos.
+                <div className="w-12 h-0.5 bg-primary-gold mx-auto mt-3 rounded" />
+              </div>
+
+              {/* Seamless Auto-Scrolling Row */}
+              <div className="relative w-full overflow-hidden py-2">
+                {/* Fade overlays on the sides for a premium aesthetic */}
+                <div className="absolute left-0 top-0 bottom-0 w-8 sm:w-20 bg-gradient-to-r from-zinc-950 to-transparent z-10 pointer-events-none" />
+                <div className="absolute right-0 top-0 bottom-0 w-8 sm:w-20 bg-gradient-to-l from-zinc-950 to-transparent z-10 pointer-events-none" />
+
+                {/* The Scrolling Container */}
+                <div 
+                  ref={galleryScrollRef}
+                  className="flex overflow-x-auto gap-4 py-2 px-4 scrollbar-none select-none"
+                  style={{ WebkitOverflowScrolling: "touch" }}
+                >
+                  {/* Duplicated 6 items for continuous scroll */}
+                  {[...GALLERY_ITEMS, ...GALLERY_ITEMS, ...GALLERY_ITEMS].map((item, idx) => (
+                    <div 
+                      key={`${item.id}-${idx}`}
+                      onClick={() => setLightboxItem({ img: item.img, title: "" })}
+                      className="relative w-48 xs:w-56 sm:w-64 aspect-square rounded-2xl overflow-hidden border border-zinc-900/80 cursor-pointer group shadow-xl flex-shrink-0 transition-all duration-300 hover:border-primary-gold/30"
+                    >
+                      <img 
+                        src={item.img} 
+                        alt="Corte" 
+                        className="w-full h-full object-cover transform group-hover:scale-105 transition-all duration-700" 
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-60 pointer-events-none" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            {/* OUR TEAM ELITE SECTION */}
+            <section className="space-y-8 pt-8 border-t border-zinc-900/60">
+              <div className="text-center">
+                <span className="text-primary-gold font-heading text-xs tracking-[3px] uppercase font-bold">Conheça quem vai te atender</span>
+                <h2 className="font-heading text-3xl font-extrabold text-white uppercase mt-1">Nosso Time de Elite</h2>
+                <p className="text-zinc-500 text-xs sm:text-sm max-w-lg mx-auto mt-2">
+                  4 profissionais apaixonados pelo que fazem. Décadas de experiência combinadas para oferecer o melhor da barbearia em Curitiba.
                 </p>
                 <div className="w-12 h-0.5 bg-primary-gold mx-auto mt-3 rounded" />
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {GALLERY_ITEMS.map((item) => (
-                  <div 
-                    key={item.id}
-                    onClick={() => setLightboxItem({ img: item.img, title: item.nome })}
-                    className="relative aspect-square rounded-xl overflow-hidden border border-zinc-900 cursor-pointer group shadow-md"
-                  >
+              <div className="grid grid-cols-2 gap-4 sm:gap-6 max-w-3xl mx-auto">
+                
+                {/* Team Member 1: Luan */}
+                <div className="bg-[#0b0c10] border border-zinc-900 rounded-xl overflow-hidden flex flex-col group shadow-lg hover:border-primary-gold/20 transition-all duration-300">
+                  <div className="relative aspect-[3/4] overflow-hidden">
                     <img 
-                      src={item.img} 
-                      alt={item.nome} 
-                      className="w-full h-full object-cover transform group-hover:scale-110 transition-all duration-500" 
+                      src="https://i.imgur.com/zp7G4Fe.jpg" 
+                      alt="Luan" 
+                      className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent flex flex-col justify-end p-4 opacity-0 group-hover:opacity-100 transition-all duration-300">
-                      <h4 className="font-heading text-white text-base tracking-wide uppercase font-semibold">{item.nome}</h4>
-                      <span className="text-primary-gold text-[10px] tracking-wider font-semibold uppercase">Ver Detalhes</span>
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent h-28" />
+                    {/* Golden overlay label */}
+                    <div className="absolute bottom-4 left-4 bg-[#ab8e66] text-black text-[10px] tracking-widest font-extrabold px-3.5 py-2 uppercase font-heading rounded-xs shadow-md">
+                      BARBEIRO SÊNIOR
                     </div>
                   </div>
-                ))}
+                  <div className="p-5 flex flex-col flex-grow">
+                    <h3 className="font-serif text-white font-bold text-lg sm:text-xl tracking-wide uppercase mt-1">
+                      LUAN
+                    </h3>
+                    <span className="text-primary-gold text-[10px] font-bold tracking-widest uppercase mt-1">
+                      BARBEIRO SÊNIOR
+                    </span>
+                    <div className="mt-4 flex items-center gap-2 text-[#ab8e66] text-xs sm:text-sm font-medium">
+                      <Award className="w-4 h-4 text-primary-gold" />
+                      <span>7 Anos de Experiência</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Team Member 2: Fernando */}
+                <div className="bg-[#0b0c10] border border-zinc-900 rounded-xl overflow-hidden flex flex-col group shadow-lg hover:border-primary-gold/20 transition-all duration-300">
+                  <div className="relative aspect-[3/4] overflow-hidden">
+                    <img 
+                      src="https://i.imgur.com/95jdXC5.jpg" 
+                      alt="Fernando" 
+                      className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent h-28" />
+                    {/* Golden overlay label */}
+                    <div className="absolute bottom-4 left-4 bg-[#ab8e66] text-black text-[10px] tracking-widest font-extrabold px-3.5 py-2 uppercase font-heading rounded-xs shadow-md">
+                      BARBEIRO SÊNIOR
+                    </div>
+                  </div>
+                  <div className="p-5 flex flex-col flex-grow">
+                    <h3 className="font-serif text-white font-bold text-lg sm:text-xl tracking-wide uppercase mt-1">
+                      FERNANDO
+                    </h3>
+                    <span className="text-primary-gold text-[10px] font-bold tracking-widest uppercase mt-1">
+                      BARBEIRO SÊNIOR
+                    </span>
+                    <div className="mt-4 flex items-center gap-2 text-[#ab8e66] text-xs sm:text-sm font-medium">
+                      <Award className="w-4 h-4 text-primary-gold" />
+                      <span>24 Anos de Experiência</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Team Member 3: Emerson */}
+                <div className="bg-[#0b0c10] border border-zinc-900 rounded-xl overflow-hidden flex flex-col group shadow-lg hover:border-primary-gold/20 transition-all duration-300">
+                  <div className="relative aspect-[3/4] overflow-hidden">
+                    <img 
+                      src="https://i.imgur.com/rl3r7Td.jpg" 
+                      alt="Emerson" 
+                      className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent h-28" />
+                    {/* Golden overlay label */}
+                    <div className="absolute bottom-4 left-4 bg-[#ab8e66] text-black text-[10px] tracking-widest font-extrabold px-3.5 py-2 uppercase font-heading rounded-xs shadow-md">
+                      BARBEIRO SÊNIOR
+                    </div>
+                  </div>
+                  <div className="p-5 flex flex-col flex-grow">
+                    <h3 className="font-serif text-white font-bold text-lg sm:text-xl tracking-wide uppercase mt-1">
+                      EMERSON
+                    </h3>
+                    <span className="text-primary-gold text-[10px] font-bold tracking-widest uppercase mt-1">
+                      BARBEIRO SÊNIOR
+                    </span>
+                    <div className="mt-4 flex items-center gap-2 text-[#ab8e66] text-xs sm:text-sm font-medium">
+                      <Award className="w-4 h-4 text-primary-gold" />
+                      <span>9 Anos de Experiência</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Team Member 4: Rodrigo */}
+                <div className="bg-[#0b0c10] border border-zinc-900 rounded-xl overflow-hidden flex flex-col group shadow-lg hover:border-primary-gold/20 transition-all duration-300">
+                  <div className="relative aspect-[3/4] overflow-hidden">
+                    <img 
+                      src="https://i.imgur.com/qMy4bm5.jpg" 
+                      alt="Rodrigo" 
+                      className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent h-28" />
+                    {/* Golden overlay label */}
+                    <div className="absolute bottom-4 left-4 bg-[#ab8e66] text-black text-[10px] tracking-widest font-extrabold px-3.5 py-2 uppercase font-heading rounded-xs shadow-md">
+                      BARBEIRO SÊNIOR
+                    </div>
+                  </div>
+                  <div className="p-5 flex flex-col flex-grow">
+                    <h3 className="font-serif text-white font-bold text-lg sm:text-xl tracking-wide uppercase mt-1">
+                      RODRIGO
+                    </h3>
+                    <span className="text-primary-gold text-[10px] font-bold tracking-widest uppercase mt-1">
+                      BARBEIRO SÊNIOR
+                    </span>
+                    <div className="mt-4 flex items-center gap-2 text-[#ab8e66] text-xs sm:text-sm font-medium">
+                      <Award className="w-4 h-4 text-primary-gold" />
+                      <span>10 Anos de Experiência</span>
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </section>
 
@@ -773,7 +1175,7 @@ export default function App() {
                   4.9 <span className="text-zinc-500 text-lg font-light">/ 5</span>
                 </h3>
                 <p className="text-zinc-400 text-xs sm:text-sm font-light">
-                  A barbearia favorita do bairro — baseado em mais de 127 avaliações no Google.
+                  A melhor barbearia de Curitiba — Baseado em mais de 280 avaliações.
                 </p>
               </div>
 
@@ -792,16 +1194,179 @@ export default function App() {
                       </p>
                     </div>
                     <div className="flex items-center gap-3 border-t border-zinc-850 pt-4 mt-6">
-                      <div className="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 font-bold text-xs uppercase">
-                        {t.autor.substring(0, 2)}
-                      </div>
+                      <img 
+                        src={t.foto} 
+                        alt={t.autor}
+                        referrerPolicy="no-referrer"
+                        className="w-10 h-10 rounded-full object-cover border border-zinc-800"
+                      />
                       <div>
                         <h4 className="text-white text-xs font-bold font-heading uppercase">{t.autor}</h4>
-                        <span className="text-zinc-500 text-[10px] block">{t.tempo}</span>
                       </div>
                     </div>
                   </div>
                 ))}
+              </div>
+            </section>
+
+            {/* CALL TO ACTION SECTION */}
+            <section className="pt-8 pb-4">
+              <div 
+                className="relative rounded-2xl overflow-hidden border border-zinc-900/85 p-8 sm:p-12 text-center bg-cover bg-center shadow-2xl mb-8"
+                style={{
+                  backgroundImage: `linear-gradient(to right, rgba(10,10,10,0.95), rgba(15,15,15,0.85)), url('https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=800&fit=crop&q=80')`
+                }}
+              >
+                <div className="absolute inset-0 bg-black/40 z-0" />
+
+                <div className="relative z-10 max-w-2xl mx-auto space-y-6">
+                  <span className="text-primary-gold font-heading text-xs tracking-[4px] uppercase font-bold block">
+                    Pronto para uma transformação?
+                  </span>
+                  
+                  <h2 className="font-heading text-2xl sm:text-4xl font-extrabold text-white uppercase tracking-tight">
+                    Agende seu horário agora
+                  </h2>
+                  
+                  <p className="text-zinc-300 text-sm sm:text-base font-light leading-relaxed max-w-lg mx-auto">
+                    Fale diretamente com a gente. Escolha o profissional, o serviço e o horário ideal. Resposta rápida, atendimento VIP.
+                  </p>
+
+                  <div className="pt-4">
+                    <motion.a
+                      href="https://wa.me/554130149413?text=Olá! Gostaria de agendar um horário."
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      whileHover={{ scale: 1.05, boxShadow: "0 0 20px rgba(212,175,55,0.4)" }}
+                      whileTap={{ scale: 0.95 }}
+                      className="inline-flex items-center gap-2.5 bg-gradient-to-r from-amber-400 via-primary-gold to-amber-500 text-black font-heading font-extrabold text-sm tracking-wider uppercase px-8 py-4 rounded-xl shadow-[0_4px_15px_rgba(212,175,55,0.25)] transition-all duration-300 cursor-pointer font-bold no-underline"
+                    >
+                      <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                        <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.661.988 3.291 1.472 4.96 1.473 5.433 0 9.851-4.388 9.855-9.782.002-2.614-1.011-5.071-2.855-6.918-1.844-1.847-4.295-2.864-6.911-2.865-5.438 0-9.855 4.388-9.86 9.782-.002 1.838.484 3.633 1.411 5.2l-.934 3.41 3.483-.909zm10.518-7.142c-.29-.145-1.716-.845-1.982-.941-.266-.096-.46-.145-.653.145-.193.29-.747.942-.916 1.135-.169.193-.338.217-.628.072-.29-.145-1.226-.452-2.335-1.442-.864-.77-1.447-1.721-1.616-2.011-.169-.29-.018-.447.127-.591.131-.13.29-.338.435-.507.145-.169.193-.29.29-.483.097-.193.048-.361-.024-.507-.072-.145-.653-1.573-.895-2.152-.236-.569-.475-.491-.653-.5-.169-.008-.362-.01-.556-.01-.193 0-.507.072-.772.361-.266.29-1.013.99-1.013 2.415 0 1.424 1.037 2.8 1.181 2.993.145.193 2.041 3.117 4.944 4.373.69.299 1.229.478 1.648.611.693.22 1.325.19 1.824.115.557-.084 1.716-.7 1.958-1.374.242-.675.242-1.254.17-1.374-.073-.12-.266-.193-.556-.339z"/>
+                      </svg>
+                      AGENDAR AGORA
+                    </motion.a>
+                  </div>
+                </div>
+              </div>
+
+              {/* INFORMATION BLOCK */}
+              <div className="bg-[#0b0c10] border border-zinc-900 rounded-2xl p-6 sm:p-10 shadow-xl space-y-8 sm:space-y-0 sm:grid sm:grid-cols-2 sm:gap-10 text-left">
+                {/* Left Column: Address, Phone and Socials */}
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="font-heading font-extrabold text-xl text-white uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <MapPin className="w-5 h-5 text-primary-gold" />
+                      Onde Estamos
+                    </h3>
+                    <div className="text-zinc-300 text-sm leading-relaxed font-light">
+                      <p className="font-bold text-base text-primary-gold mb-1">Barbearia Clube</p>
+                      <p>Barbearia</p>
+                      <p>Clube</p>
+                      <p>Rua Jacarezinho, 21</p>
+                      <p className="mt-1">Mercês — Curitiba, PR</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="font-heading font-extrabold text-lg text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                      <Phone className="w-5 h-5 text-primary-gold" />
+                      Contato
+                    </h3>
+                    <div className="text-zinc-300 text-sm font-light space-y-1">
+                      <p className="hover:text-primary-gold transition-colors duration-200">
+                        <a href="tel:4130149413" className="flex items-center gap-2">
+                          (41) 3014-9413
+                        </a>
+                      </p>
+                      <p className="hover:text-primary-gold transition-colors duration-200">
+                        <a href="tel:4130149413" className="flex items-center gap-2">
+                          (41) 3014-9413
+                        </a>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="font-heading font-extrabold text-lg text-white uppercase tracking-wider mb-3">
+                      Redes Sociais
+                    </h3>
+                    <div className="flex items-center gap-4">
+                      {/* Instagram Icon */}
+                      <motion.a
+                        href="https://instagram.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        whileHover={{ scale: 1.1, backgroundColor: "rgba(212,175,55,0.15)" }}
+                        whileTap={{ scale: 0.95 }}
+                        className="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-primary-gold hover:border-primary-gold/40 transition-colors"
+                        title="Siga no Instagram"
+                      >
+                        <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
+                          <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204 013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/>
+                        </svg>
+                      </motion.a>
+
+                      {/* WhatsApp Icon */}
+                      <motion.a
+                        href="https://wa.me/554130149413?text=Olá! Gostaria de agendar um horário."
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        whileHover={{ scale: 1.1, backgroundColor: "rgba(212,175,55,0.15)" }}
+                        whileTap={{ scale: 0.95 }}
+                        className="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-primary-gold hover:border-primary-gold/40 transition-colors"
+                        title="Fale no WhatsApp"
+                      >
+                        <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
+                          <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.661.988 3.291 1.472 4.96 1.473 5.433 0 9.851-4.388 9.855-9.782.002-2.614-1.011-5.071-2.855-6.918-1.844-1.847-4.295-2.864-6.911-2.865-5.438 0-9.855 4.388-9.86 9.782-.002 1.838.484 3.633 1.411 5.2l-.934 3.41 3.483-.909zm10.518-7.142c-.29-.145-1.716-.845-1.982-.941-.266-.096-.46-.145-.653.145-.193.29-.747.942-.916 1.135-.169.193-.338.217-.628.072-.29-.145-1.226-.452-2.335-1.442-.864-.77-1.447-1.721-1.616-2.011-.169-.29-.018-.447.127-.591.131-.13.29-.338.435-.507.145-.169.193-.29.29-.483.097-.193.048-.361-.024-.507-.072-.145-.653-1.573-.895-2.152-.236-.569-.475-.491-.653-.5-.169-.008-.362-.01-.556-.01-.193 0-.507.072-.772.361-.266.29-1.013.99-1.013 2.415 0 1.424 1.037 2.8 1.181 2.993.145.193 2.041 3.117 4.944 4.373.69.299 1.229.478 1.648.611.693.22 1.325.19 1.824.115.557-.084 1.716-.7 1.958-1.374.242-.675.242-1.254.17-1.374-.073-.12-.266-.193-.556-.339z"/>
+                        </svg>
+                      </motion.a>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column: Horários de Atendimento */}
+                <div className="space-y-4">
+                  <h3 className="font-heading font-extrabold text-xl text-white uppercase tracking-wider flex items-center gap-2 border-b border-zinc-900 pb-3 sm:pb-4">
+                    <Clock className="w-5 h-5 text-primary-gold" />
+                    Horários de Atendimento
+                  </h3>
+                  <div className="divide-y divide-zinc-900 text-sm font-light">
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-zinc-400">Segunda-feira</span>
+                      <span className="text-white font-medium">13h00 — 19h00</span>
+                    </div>
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-zinc-400">Terça a Sexta</span>
+                      <span className="text-white font-medium">09h00 — 19h00</span>
+                    </div>
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-zinc-400">Sábado</span>
+                      <span className="text-white font-medium">09h00 — 17h00</span>
+                    </div>
+                    <div className="flex justify-between py-2.5">
+                      <span className="text-zinc-400">Domingo</span>
+                      <span className="text-red-400 font-bold uppercase text-xs tracking-wider">Fechado</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Agendar Button linking to WhatsApp */}
+              <div className="text-center pt-8">
+                <motion.a
+                  href="https://wa.me/554130149413?text=Olá! Gostaria de agendar um horário."
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  whileHover={{ scale: 1.05, boxShadow: "0 0 20px rgba(212,175,55,0.4)" }}
+                  whileTap={{ scale: 0.95 }}
+                  className="inline-flex items-center gap-2.5 bg-gradient-to-r from-amber-400 via-primary-gold to-amber-500 text-black font-heading font-extrabold text-sm tracking-wider uppercase px-8 py-4 rounded-xl shadow-[0_4px_15px_rgba(212,175,55,0.25)] transition-all duration-300 cursor-pointer font-bold no-underline"
+                >
+                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.661.988 3.291 1.472 4.96 1.473 5.433 0 9.851-4.388 9.855-9.782.002-2.614-1.011-5.071-2.855-6.918-1.844-1.847-4.295-2.864-6.911-2.865-5.438 0-9.855 4.388-9.86 9.782-.002 1.838.484 3.633 1.411 5.2l-.934 3.41 3.483-.909zm10.518-7.142c-.29-.145-1.716-.845-1.982-.941-.266-.096-.46-.145-.653.145-.193.29-.747.942-.916 1.135-.169.193-.338.217-.628.072-.29-.145-1.226-.452-2.335-1.442-.864-.77-1.447-1.721-1.616-2.011-.169-.29-.018-.447.127-.591.131-.13.29-.338.435-.507.145-.169.193-.29.29-.483.097-.193.048-.361-.024-.507-.072-.145-.653-1.573-.895-2.152-.236-.569-.475-.491-.653-.5-.169-.008-.362-.01-.556-.01-.193 0-.507.072-.772.361-.266.29-1.013.99-1.013 2.415 0 1.424 1.037 2.8 1.181 2.993.145.193 2.041 3.117 4.944 4.373.69.299 1.229.478 1.648.611.693.22 1.325.19 1.824.115.557-.084 1.716-.7 1.958-1.374.242-.675.242-1.254.17-1.374-.073-.12-.266-.193-.556-.339z"/>
+                  </svg>
+                  AGENDAR AGORA
+                </motion.a>
               </div>
             </section>
 
@@ -869,7 +1434,7 @@ export default function App() {
                   </div>
 
                   <div className="space-y-3">
-                    {SERVICES.map((s) => (
+                    {services.map((s) => (
                       <div 
                         key={s.id}
                         onClick={() => selectService(s)}
@@ -1287,7 +1852,7 @@ export default function App() {
                     }
 
                     return splitList.map((appt) => {
-                      const service = SERVICES.find((s) => s.id === appt.id_servico);
+                      const service = services.find((s) => s.id === appt.id_servico);
                       const barber = BARBERS.find((b) => b.id === appt.id_barbeiro);
                       
                       return (
@@ -1384,7 +1949,7 @@ export default function App() {
             TAB: LOCALIZAÇÃO (MAP & DETAILS)
             ========================================== */}
         {activeTab === "localizacao" && (
-          <div className="max-w-5xl mx-auto space-y-8 animate-fadeIn">
+          <div className="max-w-5xl mx-auto space-y-8 animate-fadeIn text-left">
             <div className="text-center">
               <h2 className="font-heading text-3xl font-extrabold text-white uppercase">Como Chegar</h2>
               <p className="text-zinc-400 text-xs sm:text-sm">Veja nossa localização no mapa e venha nos visitar</p>
@@ -1396,7 +1961,7 @@ export default function App() {
               {/* Maps embed */}
               <div className="md:col-span-7 bg-zinc-950 rounded-2xl overflow-hidden border border-zinc-900 shadow-xl">
                 <iframe 
-                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3657.065830026779!2d-46.652983985022134!3d-23.56424618468164!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x94ce59c8da0aa315%3A0xd6b857c356190250!2sAv.%20Paulista%2C%201000%20-%20Bela%20Vista%2C%20S%C3%A3o%20Paulo%20-%20SP%2C%2001310-100!5e0!3m2!1spt-BR!2sbr!4v1688383920000!5m2!1spt-BR!2sbr" 
+                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3603.47352825838!2d-49.2965416!3d-25.4224056!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x94dce40915664be3%3A0xc3f95e28a5cf570f!2sR.%20Jacarezinho%2C%2021%20-%20Merc%C3%AAs%2C%20Curitiba%20-%20PR%2C%2080710-150!5e0!3m2!1spt-BR!2sbr!4v1688383920000!5m2!1spt-BR!2sbr" 
                   width="100%" 
                   height="400" 
                   style={{ border: 0 }} 
@@ -1417,7 +1982,7 @@ export default function App() {
                   <div className="space-y-1">
                     <h3 className="font-heading text-lg font-bold text-white uppercase tracking-wider">Endereço</h3>
                     <p className="text-zinc-400 text-xs sm:text-sm font-light leading-relaxed">
-                      Av. Paulista, 1000 — Bela Vista, São Paulo - SP, CEP 01310-100
+                      Rua Jacarezinho, 21 — Mercês, Curitiba - PR, CEP 80710-150
                     </p>
                   </div>
                 </div>
@@ -1429,7 +1994,7 @@ export default function App() {
                   <div className="space-y-1">
                     <h3 className="font-heading text-lg font-bold text-white uppercase tracking-wider">WhatsApp / Telefone</h3>
                     <p className="text-zinc-400 text-xs sm:text-sm font-light">
-                      (11) 98765-4321
+                      (41) 3014-9413
                     </p>
                   </div>
                 </div>
@@ -1442,11 +2007,19 @@ export default function App() {
                     <h3 className="font-heading text-lg font-bold text-white uppercase tracking-wider">Horários</h3>
                     <div className="text-zinc-400 text-xs sm:text-sm font-light space-y-1">
                       <p className="flex justify-between">
-                        <span>Terça a Sábado:</span>
-                        <strong className="text-zinc-300">09:00 - 20:00h</strong>
+                        <span>Segunda-feira:</span>
+                        <strong className="text-zinc-300">13h00 — 19h00</strong>
+                      </p>
+                      <p className="flex justify-between">
+                        <span>Terça a Sexta:</span>
+                        <strong className="text-zinc-300">09h00 — 19h00</strong>
+                      </p>
+                      <p className="flex justify-between">
+                        <span>Sábado:</span>
+                        <strong className="text-zinc-300">09h00 — 17h00</strong>
                       </p>
                       <p className="flex justify-between text-red-400">
-                        <span>Domingos e Segundas:</span>
+                        <span>Domingo:</span>
                         <strong>Fechado</strong>
                       </p>
                     </div>
@@ -1457,6 +2030,117 @@ export default function App() {
 
             </div>
           </div>
+        )}
+
+        {/* ==========================================
+            TAB: PORTAL DO BARBEIRO (DASHBOARD)
+            ========================================== */}
+        {activeTab === "dashboard" && (
+          !isBarberAuthenticated ? (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="max-w-md mx-auto my-12"
+            >
+              <div className="bg-[#0b0c10] border border-zinc-900 rounded-3xl p-8 shadow-2xl text-left space-y-6">
+                <div className="text-center space-y-2">
+                  <div className="mx-auto w-16 h-16 bg-primary-gold/10 border border-primary-gold/20 rounded-full flex items-center justify-center text-primary-gold mb-3 shadow-[0_0_15px_rgba(212,175,55,0.1)] animate-pulse">
+                    <Shield className="w-8 h-8" />
+                  </div>
+                  <h3 className="font-heading text-2xl font-black text-white uppercase tracking-wider">Acesso Restrito</h3>
+                  <p className="text-zinc-400 text-xs font-light">
+                    Portal exclusivo para barbeiros e administração.
+                  </p>
+                  <div className="w-12 h-0.5 bg-primary-gold mx-auto mt-3 rounded" />
+                </div>
+
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  if (barberUsername.trim().toLowerCase() === "admin" && barberPassword === "1234") {
+                    setIsBarberAuthenticated(true);
+                    sessionStorage.setItem("dom_lucas_barber_authenticated", "true");
+                    setBarberUsername("");
+                    setBarberPassword("");
+                    setBarberLoginError("");
+                  } else {
+                    setBarberLoginError("Usuário ou senha incorretos.");
+                  }
+                }} className="space-y-4">
+                  {barberLoginError && (
+                    <div className="p-3.5 bg-red-950/40 border border-red-900/40 text-red-400 text-xs rounded-xl flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      <span>{barberLoginError}</span>
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5">
+                    <label className="text-zinc-500 text-[10px] uppercase font-heading tracking-widest font-bold block">
+                      Usuário / Código
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: admin"
+                      value={barberUsername}
+                      onChange={(e) => setBarberUsername(e.target.value)}
+                      className="w-full px-4 py-3 bg-zinc-950 border border-zinc-900 hover:border-zinc-850 focus:border-primary-gold rounded-xl text-sm placeholder-zinc-800 text-white focus:outline-none transition-colors font-light"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 relative">
+                    <label className="text-zinc-500 text-[10px] uppercase font-heading tracking-widest font-bold block">
+                      Senha de Acesso
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showBarberPassword ? "text" : "password"}
+                        required
+                        placeholder="••••••••"
+                        value={barberPassword}
+                        onChange={(e) => setBarberPassword(e.target.value)}
+                        className="w-full pl-4 pr-11 py-3 bg-zinc-950 border border-zinc-900 hover:border-zinc-850 focus:border-primary-gold rounded-xl text-sm placeholder-zinc-800 text-white focus:outline-none transition-colors font-light"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowBarberPassword(!showBarberPassword)}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors p-1"
+                      >
+                        {showBarberPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full inline-flex items-center justify-center gap-2 bg-primary-gold hover:bg-primary-gold/90 text-black font-heading font-extrabold text-xs tracking-wider uppercase px-6 py-4 rounded-xl transition-all shadow-md cursor-pointer border-none mt-2"
+                  >
+                    <Lock className="w-4 h-4" />
+                    Entrar no Painel
+                  </button>
+                </form>
+
+                <div className="text-center text-[10px] text-zinc-600 bg-zinc-950/40 p-3.5 border border-zinc-900/60 rounded-xl space-y-1">
+                  <p className="font-semibold uppercase tracking-wider text-zinc-500">Acesso de Demonstração</p>
+                  <p>Código: <strong className="text-zinc-400 font-mono">admin</strong> &nbsp;|&nbsp; Senha: <strong className="text-zinc-400 font-mono">1234</strong></p>
+                </div>
+              </div>
+            </motion.div>
+          ) : (
+            <BarberDashboard
+              bookings={bookings}
+              setBookings={setBookings}
+              clients={clients}
+              setClients={setClients}
+              barbers={BARBERS}
+              services={services}
+              setServices={setServices}
+              onBackToClient={() => {
+                setIsBarberAuthenticated(false);
+                sessionStorage.removeItem("dom_lucas_barber_authenticated");
+                setActiveTab("inicio");
+              }}
+            />
+          )
         )}
 
       </main>
@@ -1499,18 +2183,26 @@ export default function App() {
           }`}
         >
           <MapPin className="w-5 h-5" />
-          <span className="text-[9px] uppercase font-bold tracking-widest font-heading">Como Chegar</span>
+          <span className="text-[9px] uppercase font-bold tracking-widest font-heading">Contato</span>
         </button>
       </nav>
 
       {/* ==========================================
           FOOTER GERAL
           ========================================== */}
-      <footer className="bg-zinc-950 border-t border-zinc-900 py-8 text-center text-xs text-zinc-500 space-y-1.5 mt-auto">
+      <footer className="bg-zinc-950 border-t border-zinc-900 py-10 text-center text-xs text-zinc-500 space-y-3 mt-auto mb-16 md:mb-0">
         <p>&copy; {new Date().getFullYear()} Barbearia Clube. Todos os direitos reservados.</p>
         <p className="font-heading uppercase tracking-widest text-[9px] text-zinc-600">
           Feito com 💈 e estilo premium para o bairro.
         </p>
+        <div className="pt-2 border-t border-zinc-900/40 max-w-xs mx-auto">
+          <button
+            onClick={() => setActiveTab("dashboard")}
+            className="text-[10px] uppercase font-heading tracking-widest text-zinc-600 hover:text-primary-gold transition-colors flex items-center justify-center gap-1.5 mx-auto"
+          >
+            <Shield className="w-3.5 h-3.5 text-primary-gold/60" /> Portal do Barbeiro 🔒
+          </button>
+        </div>
       </footer>
 
       {/* ==========================================
@@ -1727,9 +2419,11 @@ export default function App() {
                 className="max-h-[70vh] rounded-2xl object-contain border border-zinc-900 shadow-2xl"
               />
               
-              <h4 className="font-heading text-xl tracking-[2px] font-extrabold text-primary-gold uppercase mt-6">
-                {lightboxItem.title}
-              </h4>
+              {lightboxItem.title && (
+                <h4 className="font-heading text-xl tracking-[2px] font-extrabold text-primary-gold uppercase mt-6">
+                  {lightboxItem.title}
+                </h4>
+              )}
             </motion.div>
           </div>
         )}
